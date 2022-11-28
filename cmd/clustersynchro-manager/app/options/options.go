@@ -1,6 +1,8 @@
 package options
 
 import (
+	"fmt"
+
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilerrors "k8s.io/apimachinery/pkg/util/errors"
@@ -31,8 +33,9 @@ type Options struct {
 	LeaderElection   componentbaseconfig.LeaderElectionConfiguration
 	ClientConnection componentbaseconfig.ClientConnectionConfiguration
 
-	Logs    *logs.Options
-	Storage *storageoptions.StorageOptions
+	Logs         *logs.Options
+	Storage      *storageoptions.StorageOptions
+	WorkerNumber int // WorkerNumber is the number of worker goroutines
 
 	Master     string
 	Kubeconfig string
@@ -64,6 +67,7 @@ func NewClusterSynchroManagerOptions() (*Options, error) {
 
 	options.Logs = logs.NewOptions()
 	options.Storage = storageoptions.NewStorageOptions()
+	options.WorkerNumber = 1
 	return &options, nil
 }
 
@@ -74,6 +78,7 @@ func (o *Options) Flags() cliflag.NamedFlagSets {
 	genericfs.StringVar(&o.ClientConnection.ContentType, "kube-api-content-type", o.ClientConnection.ContentType, "Content type of requests sent to apiserver.")
 	genericfs.Float32Var(&o.ClientConnection.QPS, "kube-api-qps", o.ClientConnection.QPS, "QPS to use while talking with kubernetes apiserver.")
 	genericfs.Int32Var(&o.ClientConnection.Burst, "kube-api-burst", o.ClientConnection.Burst, "Burst to use while talking with kubernetes apiserver.")
+	genericfs.IntVar(&o.WorkerNumber, "worker-number", o.WorkerNumber, "The number of worker goroutines")
 
 	options.BindLeaderElectionFlags(&o.LeaderElection, genericfs)
 
@@ -90,6 +95,10 @@ func (o *Options) Validate() error {
 	var errs []error
 
 	errs = append(errs, o.Storage.Validate()...)
+
+	if o.WorkerNumber <= 0 {
+		errs = append(errs, fmt.Errorf("worker-number must be greater than 0"))
+	}
 	return utilerrors.NewAggregate(errs)
 }
 
@@ -131,6 +140,7 @@ func (o *Options) Config() (*config.Config, error) {
 		Kubeconfig:     kubeconfig,
 		EventRecorder:  eventRecorder,
 		StorageFactory: storagefactory,
+		WorkerNumber:   o.WorkerNumber,
 
 		LeaderElection: o.LeaderElection,
 	}, nil
